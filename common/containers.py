@@ -1,5 +1,5 @@
-from .common.custom_type import *
-from .common.const import *
+from .custom_type import *
+from .const import *
 from typing import List
 
 #
