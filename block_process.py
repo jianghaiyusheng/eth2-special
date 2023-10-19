@@ -165,6 +165,8 @@ def apply_deposit(state: BeaconState,
 
 def process_deposit(state: BeaconState, deposit: Deposit) -> None:
     # Verify the Merkle branch
+    # 以太坊质押合约中，采用2叉hash树压缩质押者信息，先假设有个32层的叶子结点全为0的hash树，
+    # 然后在最底层从左到右替换0节点以及直接受影响的上层节点（若计算上层节点时有0节点参与，则不算），每层只需要保存最右边的非零节点
     assert is_valid_merkle_branch(
         leaf=hash_tree_root(deposit.data),
         branch=deposit.proof,

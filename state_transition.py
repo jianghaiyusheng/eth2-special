@@ -21,10 +21,13 @@ def verify_block_signature(state: BeaconState, signed_block: SignedBeaconBlock) 
     return bls.Verify(proposer.pubkey, signing_root, signed_block.signature)
 
 def process_slots(state: BeaconState, slot: Slot) -> None:
+    # 这里的assert表明，当同一slot下面提议两个区块时，验证者使用第一个收到的。而相应的惩罚通过body.proposer_slashings实现
+    # 区块重组是如何发生的呢？即过去的区块是如何被替换的? 没看到分叉选择算法
     assert state.slot < slot
     while state.slot < slot:
         process_slot(state)
         # Process epoch on the start slot of the next epoch
+        # 比如在处理第32个区块时，此时的state.slot为31，相当于在epoch开始时，执行process_epoch
         if (state.slot + 1) % SLOTS_PER_EPOCH == 0:
             process_epoch(state)
         state.slot = Slot(state.slot + 1)
