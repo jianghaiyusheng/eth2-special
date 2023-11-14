@@ -55,3 +55,13 @@ def is_valid_merkle_branch(leaf: Bytes32, branch: Sequence[Bytes32], depth: uint
         else:
             value = hash(value + branch[i])
     return value == root
+
+def get_index_for_new_validator(state: BeaconState) -> ValidatorIndex:
+    return ValidatorIndex(len(state.validators))
+
+def set_or_append_list(list: List, index: ValidatorIndex, value: Any) -> None:
+    if index == len(list):
+        list.append(value)
+    else:
+        list[index] = value
+        

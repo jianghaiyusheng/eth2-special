@@ -146,3 +146,88 @@ def is_valid_indexed_attestation(state: BeaconState, indexed_attestation: Indexe
     domain = get_domain(state, DOMAIN_BEACON_ATTESTER, indexed_attestation.data.target.epoch)
     signing_root = compute_signing_root(indexed_attestation.data, domain)
     return bls.FastAggregateVerify(pubkeys, signing_root, indexed_attestation.signature)
+
+def get_unslashed_attesting_indices(state: BeaconState,
+                                    attestations: Sequence[PendingAttestation]) -> Set[ValidatorIndex]:
+    output = set()  # type: Set[ValidatorIndex]
+    for a in attestations:
+        output = output.union(get_attesting_indices(state, a.data, a.aggregation_bits))
+    return set(filter(lambda index: not state.validators[index].slashed, output))
+
+def get_attesting_balance(state: BeaconState, attestations: Sequence[PendingAttestation]) -> Gwei:
+    """
+    Return the combined effective balance of the set of unslashed validators participating in ``attestations``.
+    Note: ``get_total_balance`` returns ``EFFECTIVE_BALANCE_INCREMENT`` Gwei minimum to avoid divisions by zero.
+    """
+    return get_total_balance(state, get_unslashed_attesting_indices(state, attestations))
+
+
+def get_next_sync_committee_indices(state: BeaconState) -> Sequence[ValidatorIndex]:
+    """
+    Return the sync committee indices, with possible duplicates, for the next sync committee.
+    """
+    epoch = Epoch(get_current_epoch(state) + 1)
+
+    MAX_RANDOM_BYTE = 2**8 - 1
+    active_validator_indices = get_active_validator_indices(state, epoch)
+    active_validator_count = uint64(len(active_validator_indices))
+    seed = get_seed(state, epoch, DOMAIN_SYNC_COMMITTEE)
+    i = 0
+    sync_committee_indices: List[ValidatorIndex] = []
+    while len(sync_committee_indices) < SYNC_COMMITTEE_SIZE:
+        shuffled_index = compute_shuffled_index(uint64(i % active_validator_count), active_validator_count, seed)
+        candidate_index = active_validator_indices[shuffled_index]
+        random_byte = hash(seed + uint_to_bytes(uint64(i // 32)))[i % 32]
+        effective_balance = state.validators[candidate_index].effective_balance
+        if effective_balance * MAX_RANDOM_BYTE >= MAX_EFFECTIVE_BALANCE * random_byte:
+            sync_committee_indices.append(candidate_index)
+        i += 1
+    return sync_committee_indices
+
+def get_next_sync_committee(state: BeaconState) -> SyncCommittee:
+    """
+    Return the next sync committee, with possible pubkey duplicates.
+    """
+    indices = get_next_sync_committee_indices(state)
+    pubkeys = [state.validators[index].pubkey for index in indices]
+    aggregate_pubkey = eth_aggregate_pubkeys(pubkeys)
+    return SyncCommittee(pubkeys=pubkeys, aggregate_pubkey=aggregate_pubkey)
+
+
+def get_attestation_participation_flag_indices(state: BeaconState,
+                                               data: AttestationData,
+                                               inclusion_delay: uint64) -> Sequence[int]:
+    """
+    Return the flag indices that are satisfied by an attestation.
+    """
+    if data.target.epoch == get_current_epoch(state):
+        justified_checkpoint = state.current_justified_checkpoint
+    else:
+        justified_checkpoint = state.previous_justified_checkpoint
+
+    # Matching roots
+    is_matching_source = data.source == justified_checkpoint
+    is_matching_target = is_matching_source and data.target.root == get_block_root(state, data.target.epoch)
+    is_matching_head = is_matching_target and data.beacon_block_root == get_block_root_at_slot(state, data.slot)
+    assert is_matching_source
+
+    participation_flag_indices = []
+    if is_matching_source and inclusion_delay <= integer_squareroot(SLOTS_PER_EPOCH):
+        participation_flag_indices.append(TIMELY_SOURCE_FLAG_INDEX)
+    if is_matching_target and inclusion_delay <= SLOTS_PER_EPOCH:
+        participation_flag_indices.append(TIMELY_TARGET_FLAG_INDEX)
+    if is_matching_head and inclusion_delay == MIN_ATTESTATION_INCLUSION_DELAY:
+        participation_flag_indices.append(TIMELY_HEAD_FLAG_INDEX)
+
+    return participation_flag_indices
+
+
+def get_base_reward_per_increment(state: BeaconState) -> Gwei:
+    return Gwei(EFFECTIVE_BALANCE_INCREMENT * BASE_REWARD_FACTOR // integer_squareroot(get_total_active_balance(state)))
+
+def get_base_reward(state: BeaconState, index: ValidatorIndex) -> Gwei:
+    """
+    Return the base reward for the validator defined by ``index`` with respect to the current ``state``.
+    """
+    increments = state.validators[index].effective_balance // EFFECTIVE_BALANCE_INCREMENT
+    return Gwei(increments * get_base_reward_per_increment(state))

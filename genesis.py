@@ -1,13 +1,14 @@
 from .helper.misc import *
 from .helper.predicates import *
 from .helper.state_accessors import get_active_validator_indices
+from .block_process import process_deposit, get_next_sync_committee
 
 def initialize_beacon_state_from_eth1(eth1_block_hash: Hash32,
                                       eth1_timestamp: uint64,
                                       deposits: Sequence[Deposit]) -> BeaconState:
     fork = Fork(
-        previous_version=GENESIS_FORK_VERSION,
-        current_version=GENESIS_FORK_VERSION,
+        previous_version=ALTAIR_FORK_VERSION,  # [Modified in Altair] for testing only
+        current_version=ALTAIR_FORK_VERSION,  # [Modified in Altair]
         epoch=GENESIS_EPOCH,
     )
     state = BeaconState(
@@ -35,6 +36,11 @@ def initialize_beacon_state_from_eth1(eth1_block_hash: Hash32,
 
     # Set genesis validators root for domain separation and chain versioning
     state.genesis_validators_root = hash_tree_root(state.validators)
+
+    # [New in Altair] Fill in sync committees
+    # Note: A duplicate committee is assigned for the current and next committee at genesis
+    state.current_sync_committee = get_next_sync_committee(state)
+    state.next_sync_committee = get_next_sync_committee(state)
 
     return state
 

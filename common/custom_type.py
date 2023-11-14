@@ -38,6 +38,9 @@ class ValidatorIndex(uint64):
 class Gwei(uint64):
     pass
 
+class ParticipationFlags(uint8):
+    pass
+
 class Root(Bytes32):
     pass
 
